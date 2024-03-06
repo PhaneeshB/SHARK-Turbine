@@ -163,10 +163,10 @@ if __name__ == "__main__":
             args.batch_size, 4, args.height // 8, args.width // 8, dtype=dtype
         )'''
         example_input = load_tensor_by_pattern("example_input_*_f16.pt")
-    elif args.variant == "encode":
-        example_input = torch.rand(
-            args.batch_size, 3, args.height, args.width, dtype=dtype
-        )
+    # elif args.variant == "encode":
+    #     example_input = torch.rand(
+    #         args.batch_size, 3, args.height, args.width, dtype=dtype
+    #     )
     print("generating turbine output:")
     turbine_output = run_vae(
         args.device,
@@ -185,9 +185,22 @@ if __name__ == "__main__":
         print("generating torch output: ")
         from turbine_models.custom_models.sd_inference import utils
 
+        # Direct Comparision with TorchOutput
         # torch_output = run_torch_vae(
         #     args.hf_model_name, custom_vae, args.variant, example_input.float()
         # )
+        # torch.save(torch_output, "expected_output_vae_11_conv2.pt")
+
+        # print("-----------------------------------------------------------")
+        # print(f"Compare f16 pytorch to f16 rocm")
+        # # np.testing.assert_allclose(torch_output_f16, turbine_output.to_host(), atol=4e-2, rtol=4e-2)
+        # is_close = np.isclose(turbine_output.to_host(), torch_output, rtol=4e-2, atol=4e-2)
+        # pct = is_close.sum()/torch_output.size * 100
+        # print(f"pct correct : ({is_close.sum()}/{torch_output.size}) ({pct}%)")
+        # print(f"largest Error : {utils.largest_error(torch_output, turbine_output)}")
+        # print("-----------------------------------------------------------")
+
+        # For comparision with precomputed outputs from fx_Graphs 
         torch_output_f32 = load_tensor_by_pattern('output_*_f32.npy', load_as_numpy=True)
         torch_output_f16 = load_tensor_by_pattern('output_*_f16.npy', load_as_numpy=True)
 

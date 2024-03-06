@@ -231,8 +231,8 @@ class jittable(CallableIntrinsic):
                     node.target = torch._ops.ops.aten.clone.default
         transformed_f.recompile()
 
-        BREAK_POS = 10
-        DTYPE = torch.float16
+        BREAK_POS = 11
+        DTYPE = torch.float32
 
         def break_at_pos(fx_g: torch.fx.GraphModule, pos: int):
             count:int = 0
@@ -253,7 +253,7 @@ class jittable(CallableIntrinsic):
             return fx_g
         # import pdb; pdb.set_trace()
         import copy
-        transformed_f = break_at_pos(copy.deepcopy(transformed_f), BREAK_POS)
+        # transformed_f = break_at_pos(copy.deepcopy(transformed_f), BREAK_POS)
 
         # create inputs and save them
         batch_size = 1
@@ -302,11 +302,15 @@ class jittable(CallableIntrinsic):
             text_embeds = torch.rand(2 * batch_size, 1280, dtype=dtype)
             time_ids = torch.zeros(2 * batch_size, 6, dtype=dtype)
             guidance_scale = torch.tensor([7.5], dtype=dtype)'''
+            inp_a = torch.rand( 2, 10, 4096, 64, dtype=dtype)
+            inp_b = torch.rand( 2, 10, 4096, 64, dtype=dtype)
+            inp_c = torch.rand( 2, 10, 4096, 64, dtype=dtype)
+            
             #### VAE INPUT ###
-            example_input = torch.rand(
-                batch_size, 4, height // 8, width // 8, dtype=dtype
-            )
-            print(f"SAVING INPUT TENSORS for fp16 and fp32")
+            # example_input = torch.rand(
+            #     batch_size, 4, height // 8, width // 8, dtype=dtype
+            # )
+            # print(f"SAVING INPUT TENSORS for fp16 and fp32")
             # save fp32 and fp16 inputs 
             '''save_tensor(sample , f"sample_{2*batch_size}x4x{height//8}x{width//8}")
             save_tensor(timestep, "timestep_1_i64")
@@ -314,7 +318,10 @@ class jittable(CallableIntrinsic):
             save_tensor(text_embeds , f"textembeds_{2*batch_size}x1280")
             save_tensor(time_ids , f"timeids_{2*batch_size}x6")
             save_tensor(guidance_scale , f"guidancescale_1")'''
-            save_tensor(example_input, f"example_input_{batch_size}x4x{height//8}x{width//8}")
+            # save_tensor(example_input, f"example_input_{batch_size}x4x{height//8}x{width//8}")
+            save_tensor(inp_a, f"input_a_2x10x4096x64")
+            save_tensor(inp_b, f"input_b_2x10x4096x64")
+            save_tensor(inp_c, f"input_c_2x10x4096x64")
             # print(f"LOADING FP32 INPUTS FOR INFERENCE")
             # sample = load_tensor_by_pattern("sample_*_f32.pt")
             # timestep = load_tensor_by_pattern("timestep_*.pt")
@@ -322,6 +329,10 @@ class jittable(CallableIntrinsic):
             # text_embeds = load_tensor_by_pattern("textembeds_*_f32.pt")
             # time_ids = load_tensor_by_pattern("timeids_*_f32.pt")
             # guidance_scale = load_tensor_by_pattern("guidancescale_*_f32.pt")
+            # example_input = load_tensor_by_pattern("example_input_*_f32.pt")
+            inp_a = load_tensor_by_pattern("input_a*_f32.pt")
+            inp_b = load_tensor_by_pattern("input_b*_f32.pt")
+            inp_c = load_tensor_by_pattern("input_c*_f32.pt")
         else:
             print(f"LOADING FP16 INPUTS FOR INFERENCE")
             '''sample = load_tensor_by_pattern("sample_*_f16.pt")
@@ -330,7 +341,10 @@ class jittable(CallableIntrinsic):
             text_embeds = load_tensor_by_pattern("textembeds_*_f16.pt")
             time_ids = load_tensor_by_pattern("timeids_*_f16.pt")
             guidance_scale = load_tensor_by_pattern("guidancescale_*_f16.pt")'''
-            example_input = load_tensor_by_pattern("example_input_*_f16.pt")
+            # example_input = load_tensor_by_pattern("example_input_*_f16.pt")
+            inp_a = load_tensor_by_pattern("input_a*_f16.pt")
+            inp_b = load_tensor_by_pattern("input_b*_f16.pt")
+            inp_c = load_tensor_by_pattern("input_c*_f16.pt")
             
 
         print(f"{transformed_f}", file=open(f"0_getting_fx_{dtype_str}.fxir", "w"))
@@ -355,21 +369,22 @@ class jittable(CallableIntrinsic):
         print(f"{gm}", file=open(f"1_graphmodule_exported_traced_{dtype_str}.gm", "w"))
         print(f"{dt.now().strftime('%H:%M:%S.%f')} : graphmodule_exported_traced Saved!")
 
-        # import pdb; pdb.set_trace()
-        #output = gm(sample, timestep, prompt_embeds, text_embeds, time_ids, guidance_scale)
-        output = gm(example_input)
+        import pdb; pdb.set_trace()
+        # output = gm(sample, timestep, prompt_embeds, text_embeds, time_ids, guidance_scale)
+        # output = gm(example_input)
+        # output = gm(inp_a, inp_b, inp_c)
         print(f"{dt.now().strftime('%H:%M:%S.%f')} : graphModule OUTPUT COMPUTED!")
-        if isinstance(output, torch.Tensor):
-            op_shape = 'x'.join(list(map(lambda s: str(s), list(output.shape))))
-            np.save(f"output_{op_shape}_{dtype_str}", output.detach().numpy())
-            torch.save( output, f"output_{op_shape}_{dtype_str}.pt")
-        else:
-            print(f"{output}", file=open('output.txt','w'))
+        # if isinstance(output, torch.Tensor):
+        #     op_shape = 'x'.join(list(map(lambda s: str(s), list(output.shape))))
+        #     np.save(f"output_{op_shape}_{dtype_str}", output.detach().numpy())
+        #     torch.save( output, f"output_{op_shape}_{dtype_str}.pt")
+        # else:
+        #     print(f"{output}", file=open('output.txt','w'))
 
         # for CPU break here
-        if dtype == torch.float32:
-            from sys import exit
-            exit("CPU FP32 Run only need torch output")
+        # if dtype == torch.float32:
+        #     from sys import exit
+        #     exit("CPU FP32 Run only need torch output")
         # import pdb; pdb.set_trace()
 
         # TODO: Add debug logging for the exported graph module.

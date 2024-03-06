@@ -17,10 +17,15 @@ from shark_turbine.dynamo.passes import (
 from turbine_models.custom_models.sd_inference import utils
 import torch
 import torch._dynamo as dynamo
-from diffusers import AutoencoderKL
+from diffusers import UNet2DConditionModel
+
+import safetensors
 import argparse
 
 parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--hf_auth_token", type=str, help="The Hugging Face auth token, required"
+)
 parser.add_argument(
     "--hf_model_name",
     type=str,
@@ -37,6 +42,9 @@ parser.add_argument("--width", type=int, default=1024, help="Width of Stable Dif
 parser.add_argument(
     "--precision", type=str, default="fp16", help="Precision of Stable Diffusion"
 )
+parser.add_argument(
+    "--max_length", type=int, default=77, help="Sequence Length of Stable Diffusion"
+)
 parser.add_argument("--compile_to", type=str, help="torch, linalg, vmfb")
 parser.add_argument("--external_weight_path", type=str, default="")
 parser.add_argument(
@@ -51,10 +59,9 @@ parser.add_argument(
     "--iree_target_triple",
     type=str,
     default="",
-    help="Specify llvmcpu/vulkan target triple or rocm/cuda target device.",
+    help="Specify vulkan target triple or rocm/cuda target device.",
 )
 parser.add_argument("--vulkan_max_allocation", type=str, default="4294967296")
-parser.add_argument("--variant", type=str, default="decode")
 parser.add_argument(
     "--decomp_attn",
     default=False,
@@ -63,68 +70,38 @@ parser.add_argument(
 )
 
 
-class VaeModel(torch.nn.Module):
-    def __init__(
-        self,
-        hf_model_name,
-        custom_vae="",
-    ):
+class UnetModel(torch.nn.Module):
+    def __init__(self):
         super().__init__()
-        self.vae = None
-        if custom_vae in ["", None]:
-            self.vae = AutoencoderKL.from_pretrained(
-                hf_model_name,
-                subfolder="vae",
-            )
-        elif not isinstance(custom_vae, dict):
-            try:
-                # custom HF repo with no vae subfolder
-                self.vae = AutoencoderKL.from_pretrained(
-                    custom_vae,
-                )
-            except:
-                # some larger repo with vae subfolder
-                self.vae = AutoencoderKL.from_pretrained(
-                    custom_vae,
-                    subfolder="vae",
-                )
-        else:
-            # custom vae as a HF state dict
-            self.vae = AutoencoderKL.from_pretrained(
-                hf_model_name,
-                subfolder="vae",
-            )
-            self.vae.load_state_dict(custom_vae)
 
-    def decode_inp(self, inp):
-        inp = 1 / 0.13025 * inp
-        x = self.vae.decode(inp, return_dict=False)[0]
-        return (x / 2 + 0.5).clamp(0, 1)
-
-    def encode_inp(self, inp):
-        latents = self.vae.encode(inp).latent_dist.sample()
-        return 0.13025 * latents
+    def forward(
+        self, a,b,c
+    ):
+        with torch.no_grad():            
+            x = torch.nn.functional.scaled_dot_product_attention(a,b,c)[0]
+        return x
 
 
-def export_vae_model(
-    vae_model,
+def export_unet_model(
+    unet_model,
     hf_model_name,
     batch_size,
     height,
     width,
-    precision,
+    precision="fp32",
+    max_length=77,
+    hf_auth_token=None,
     compile_to="torch",
     external_weights=None,
     external_weight_path=None,
     device=None,
     target_triple=None,
     max_alloc=None,
-    variant="decode",
     decomp_attn=False,
 ):
     mapper = {}
     decomp_list = DEFAULT_DECOMPOSITIONS
-    if decomp_attn == True:
+    if True or decomp_attn == True:
         decomp_list.extend(
             [
                 torch.ops.aten._scaled_dot_product_flash_attention_for_cpu,
@@ -132,79 +109,82 @@ def export_vae_model(
             ]
         )
     dtype = torch.float16 if precision == "fp16" else torch.float32
-    if precision == "fp16":
-        vae_model = vae_model.half()
-    utils.save_external_weights(
-        mapper, vae_model, external_weights, external_weight_path
-    )
+    # if precision == "fp16":
+    #     unet_model = unet_model.half()
+    # utils.save_external_weights(
+    #     mapper, unet_model, external_weights, external_weight_path
+    # )
+    # sample = (
+    #     2 * batch_size,
+    #     unet_model.unet.config.in_channels,
+    #     height // 8,
+    #     width // 8,
+    # )
+    # time_ids_shape = (2 * batch_size, 6)
+    # prompt_embeds_shape = (2 * batch_size, max_length, 2048)
+    # text_embeds_shape = (2 * batch_size, 1280)
 
-    sample = (batch_size, 4, height // 8, width // 8)
-    if variant == "encode":
-        sample = (batch_size, 3, height, width)
+    class CompiledUnet(CompiledModule):
 
-    class CompiledVae(CompiledModule):
-        if external_weights:
-            params = export_parameters(
-                vae_model, external=True, external_scope="", name_mapper=mapper.get
+        def main(
+            self,
+            a=AbstractTensor(2,10,4096,64, dtype=dtype),
+            b=AbstractTensor(2,10,4096,64, dtype=dtype),
+            c=AbstractTensor(2,10,4096,64, dtype=dtype),
+        ):
+            return jittable(unet_model.forward, decompose_ops=decomp_list)(
+                a,b,c
             )
-        else:
-            params = export_parameters(vae_model)
-
-        def main(self, inp=AbstractTensor(*sample, dtype=dtype)):
-            if variant == "decode":
-                return jittable(vae_model.decode_inp, decompose_ops=decomp_list)(inp)
-            elif variant == "encode":
-                return jittable(vae_model.encode_inp, decompose_ops=decomp_list)(inp)
 
     import_to = "INPUT" if compile_to == "linalg" else "IMPORT"
-    inst = CompiledVae(context=Context(), import_to=import_to)
+    inst = CompiledUnet(context=Context(), import_to=import_to)
 
     module_str = str(CompiledModule.get_mlir_module(inst))
-    safe_name = utils.create_safe_name(
-        hf_model_name, f"_{height}x{width}_{precision}_vae_{variant}_{device}"
-    )
+    safe_name = f"sdpaonly_2x10x4096x64_{args.precision}_unet"
+
     with open(f"{safe_name}.mlir", "w+") as f:
         f.write(module_str)
-    print("Saved to", safe_name + ".mlir")
+    print("Saved mlir to", safe_name + ".mlir")
     if compile_to != "vmfb":
         return module_str
     elif os.path.isfile(safe_name + ".vmfb"):
         exit()
     else:
-        utils.compile_to_vmfb(module_str, device, target_triple, max_alloc, safe_name)
+        utils.compile_to_vmfb(
+            module_str,
+            device,
+            target_triple,
+            max_alloc,
+            safe_name,
+            return_path=False,
+        )
 
 
 if __name__ == "__main__":
-    args = parser.parse_args()
-    if args.precision == "fp16":
-        custom_vae = "madebyollin/sdxl-vae-fp16-fix"
-    else:
-        custom_vae = ""
+    import logging
 
-    vae_model = VaeModel(
-        args.hf_model_name,
-        custom_vae=custom_vae,
+    logging.basicConfig(level=logging.DEBUG)
+    args = parser.parse_args()
+    unet_model = UnetModel(
     )
-    mod_str = export_vae_model(
-        vae_model,
+    mod_str = export_unet_model(
+        unet_model,
         args.hf_model_name,
         args.batch_size,
         args.height,
         args.width,
         args.precision,
+        args.max_length,
+        args.hf_auth_token,
         args.compile_to,
         args.external_weights,
         args.external_weight_path,
         args.device,
         args.iree_target_triple,
         args.vulkan_max_allocation,
-        args.variant,
         args.decomp_attn,
     )
-    safe_name = utils.create_safe_name(
-        args.hf_model_name,
-        f"_{args.height}x{args.width}_{args.precision}_vae_{args.variant}",
-    )
+    safe_name = f"sdpaonly_2x10x4096x64_{args.precision}_unet"
     with open(f"{safe_name}.mlir", "w+") as f:
         f.write(mod_str)
     print("Saved to", safe_name + ".mlir")

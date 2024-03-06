@@ -4,9 +4,9 @@ from datetime import datetime as dt
 import torch
 
 # Assuming BREAK_POS_F32, DTYPE_F32, BREAK_POS_F16, DTYPE_F16 are defined elsewhere
-PATH_TO_SHARK_TURBINE='/home/avsharma/SHARK-Turbine'
+PATH_TO_SHARK_TURBINE='/home/pbarwari/SHARK-Turbine'
 PATH_TO_JITTABLE=f"{PATH_TO_SHARK_TURBINE}/core/shark_turbine/aot/builtins/jittable.py"
-HF_AUTH_KEY = None
+HF_AUTH_KEY =  "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"
 
 def replace_values_in_file(path_to_file, new_break_pos, new_dtype):
     """
@@ -47,7 +47,7 @@ def replace_values_in_file(path_to_file, new_break_pos, new_dtype):
 def unet(BREAK_POS_F16, BREAK_POS_F32 ):
     DTYPE_F32 = torch.float32
     DTYPE_F16 = torch.float16
-    folder_name = f"small_unet_graphs_rocm_{BREAK_POS_F16}_1"
+    folder_name = f"small_unet_graphs_rocm_{BREAK_POS_F16}_1i"
     os.mkdir(folder_name)
     print(f"dir created - {folder_name}")
     os.chdir(folder_name)
@@ -73,7 +73,7 @@ def unet(BREAK_POS_F16, BREAK_POS_F32 ):
     start = dt.now() 
     print(f"{start.strftime('%H:%M:%S.%f')} : F16 Start")
     # Run FP16 command
-    command = f"""time python {PATH_TO_SHARK_TURBINE}/models/turbine_models/custom_models/sdxl_inference/unet.py --hf_auth_token={HF_AUTH_KEY} --compile_to=vmfb --external_weights=safetensors --external_weight_path={PATH_TO_SHARK_TURBINE}/stable_diffusion_xlv1p0_unet.safetensors --device=rocm --hf_model_name="stabilityai/stable-diffusion-xl-base-1.0" --iree_target_triple=gfx940 --max_length=64 --decomp_attn
+    command = f"""time python {PATH_TO_SHARK_TURBINE}/models/turbine_models/custom_models/sdxl_inference/unet.py --hf_auth_token={HF_AUTH_KEY} --compile_to=vmfb --external_weights=safetensors --external_weight_path={PATH_TO_SHARK_TURBINE}/stable_diffusion_xlv1p0_unet.safetensors --device=rocm --hf_model_name="stabilityai/stable-diffusion-xl-base-1.0" --iree_target_triple=gfx940 --max_length=64
 """
     result = subprocess.run(command, shell=True, capture_output=True, text=True)
     with open("report_run_f16.txt", "w") as f:
@@ -97,7 +97,7 @@ def unet(BREAK_POS_F16, BREAK_POS_F32 ):
 def vae(BREAK_POS_F16, BREAK_POS_F32 ):
     DTYPE_F32 = torch.float32
     DTYPE_F16 = torch.float16
-    folder_name = f"small_vae_graphs_rocm_{BREAK_POS_F16}_1"
+    folder_name = f"small_vae_graphs_rocm_{BREAK_POS_F16}_4"
     os.mkdir(folder_name)
     print(f"dir created - {folder_name}")
     os.chdir(folder_name)
@@ -154,4 +154,12 @@ if __name__ == "__main__":
     # unet(187, 184)
     # transpose_4, transpose_5, transpose_6
 
-    vae(10, 10)
+    # vae(6, 6)
+    # vae(0, 0)
+    # vae(1, 1)
+    # vae(2, 2)
+    # vae(7, 7)
+    # vae(10, 10)
+    vae(11, 11)
+    # vae(21, 21)
+    # vae(78, 78)

@@ -76,6 +76,7 @@ def compile_to_vmfb(
                 "--iree-rocm-link-bc=true",
                 "--iree-rocm-bc-dir=/opt/rocm/amdgcn/bitcode",
                 "--iree-vm-bytecode-module-strip-source-map=true",
+                # "--iree-opt-data-tiling=false",
                 "--iree-vm-target-truncate-unsupported-floats",
                 "--iree-hal-dump-executable-files-to=haldump",
                 "--iree-flow-dump-dispatch-graph",
@@ -84,6 +85,7 @@ def compile_to_vmfb(
                 "--iree-opt-const-eval=false",
                 "--iree-codegen-gpu-native-math-precision=true",
                 "--iree-rocm-waves-per-eu=2",
+                "--iree-codegen-llvmgpu-use-vector-distribution",
                 "--iree-preprocessing-pass-pipeline=builtin.module(iree-preprocessing-transpose-convolution-pipeline)",
                 "--iree-codegen-transform-dialect-library=/home/pbarwari/attention_mfma_transform_64_spec.mlir",
             ]
